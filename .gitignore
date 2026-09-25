@@ -1,0 +1,15 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Large sequence and alignment files (regenerate from SRA / pipeline)
+*.sra
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.bai
+*.bt2
+data/genome/
