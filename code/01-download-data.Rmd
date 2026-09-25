@@ -1,0 +1,122 @@
+---
+title: "01 - Download SRP139854 reads"
+output: html_document
+---
+
+Download the six single-end MBD-BS runs for SRP139854 (*C. virginica* gill, oil vs. no oil),
+compress them, record md5 checksums, and build a sample sheet with a `treatment` column.
+
+- Input: `data/runinfo.csv` (SRA run metadata)
+- Output reads: `data/raw-reads/` (gitignored)
+- Output metadata/checks: `data/sample_sheet.csv`, `output/01-download-data/`
+
+Requires the SRA Toolkit. Create the environment once with:
+
+```
+conda env create -f envs/sra-tools.yml
+```
+
+```{r setup, include=FALSE}
+# Paths are relative to code/, so chunks work the same run one at a time or knitted
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE)
+```
+
+# Sample sheet
+
+Sample names starting with `NB` are no-oil controls; `HB` are 25,000 ppm oil.
+
+```{r sample-sheet}
+runinfo <- read.csv("../data/runinfo.csv")
+
+sample_sheet <- data.frame(
+  run       = runinfo$Run,
+  sample    = runinfo$LibraryName,
+  treatment = ifelse(grepl("^HB", runinfo$LibraryName), "oil", "control"),
+  spots     = runinfo$spots,
+  bases     = runinfo$bases
+)
+sample_sheet <- sample_sheet[order(sample_sheet$treatment, sample_sheet$sample), ]
+
+stopifnot(nrow(sample_sheet) == 6, all(table(sample_sheet$treatment) == 3))
+
+write.csv(sample_sheet, "../data/sample_sheet.csv", row.names = FALSE, quote = FALSE)
+sample_sheet
+```
+
+# Download
+
+`prefetch` pulls each `.sra` file, then `fasterq-dump` converts it to FASTQ.
+Runs that already have a `.fastq.gz` are skipped, so the chunk can be re-run safely.
+
+```{bash download}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/sra-tools/bin:$PATH
+
+threads=8
+sra_dir=../data/raw-reads/sra
+fq_dir=../data/raw-reads
+tmp_dir=${TMPDIR:-/tmp}/fasterq-$$
+
+mkdir -p "${sra_dir}" "${fq_dir}" "${tmp_dir}" ../output/01-download-data
+
+for run in $(tail -n +2 ../data/sample_sheet.csv | cut -d, -f1); do
+  if [[ -s "${fq_dir}/${run}.fastq.gz" ]]; then
+    echo "${run}: already downloaded, skipping"
+    continue
+  fi
+
+  prefetch "${run}" \
+    --output-directory "${sra_dir}" \
+    --max-size 10G
+
+  vdb-validate "${sra_dir}/${run}"
+
+  fasterq-dump "${sra_dir}/${run}" \
+    --outdir "${fq_dir}" \
+    --temp "${tmp_dir}" \
+    --threads "${threads}"
+
+  pigz -p "${threads}" "${fq_dir}/${run}.fastq"
+done
+
+rm -rf "${tmp_dir}"
+ls -lh "${fq_dir}"
+```
+
+# Checksums
+
+```{bash md5}
+set -euo pipefail
+
+cd ../data/raw-reads
+md5sum SRR*.fastq.gz > ../../output/01-download-data/raw-reads.md5
+cat ../../output/01-download-data/raw-reads.md5
+```
+
+To verify later: `cd data/raw-reads && md5sum -c ../../output/01-download-data/raw-reads.md5`
+
+# Check read counts against SRA
+
+Every FASTQ should have exactly the number of spots SRA reports.
+
+```{bash read-counts}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/sra-tools/bin:$PATH
+
+echo "run,reads" > ../output/01-download-data/read-counts.csv
+for fq in ../data/raw-reads/SRR*.fastq.gz; do
+  run=$(basename "${fq}" .fastq.gz)
+  n=$(( $(pigz -dc "${fq}" | wc -l) / 4 ))
+  echo "${run},${n}" >> ../output/01-download-data/read-counts.csv
+done
+cat ../output/01-download-data/read-counts.csv
+```
+
+```{r compare-counts}
+counts <- read.csv("../output/01-download-data/read-counts.csv")
+check <- merge(sample_sheet, counts, by = "run")
+check$match <- check$spots == check$reads
+check[, c("run", "sample", "treatment", "spots", "reads", "match")]
+
+stopifnot(nrow(check) == nrow(sample_sheet), all(check$match))
+```

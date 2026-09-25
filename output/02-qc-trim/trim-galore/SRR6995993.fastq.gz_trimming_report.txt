@@ -1,0 +1,148 @@
+SUMMARISING RUN PARAMETERS
+=========================
+Input filename: SRR6995993.fastq.gz
+Trimming mode: single-end
+Trim Galore version: 2.3.0
+Quality Phred score cutoff: 20
+Quality encoding type selected: ASCII+33
+Adapter sequence: 'AGATCGGAAGAGC' (user-specified or auto-detected)
+Maximum trimming error rate: 0.1
+Minimum required adapter overlap (stringency): 1 bp
+Minimum required sequence length single-end: 20 bp
+Output file will be GZIP compressed
+
+
+Trim Galore 2.3.0 — adapter trimming built in
+This is cutadapt 4.0 (compatible; for MultiQC backwards compatibility)
+Command line parameters: -j 1 -e 0.1 -q 20 -O 1 -a AGATCGGAAGAGC SRR6995993.fastq.gz
+Processing reads on 1 core in single-end mode ...
+
+=== Summary ===
+
+Total reads processed:           25,752,634
+Reads with adapters:             15,393,563 (59.8%)
+Reads written (passing filters): 25,752,634 (100.0%)
+
+Total basepairs processed:   2,601,016,034 bp
+Quality-trimmed:              168,252,428 bp (6.5%)
+Total written (filtered):    2,139,987,827 bp (82.3%)
+
+=== Adapter 1 ===
+
+Sequence: AGATCGGAAGAGC; Type: regular 3'; Length: 13; Trimmed: 15393563 times.
+
+No. of allowed errors:
+1-9 bp: 0; 10-13 bp: 1
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+1	7645997	6438158.5	0	7645997
+2	534343	1609539.6	0	534343
+3	291109	402384.9	0	291109
+4	245902	100596.2	0	245902
+5	222809	25149.1	0	222809
+6	221201	6287.3	0	221201
+7	227983	1571.8	0	227983
+8	176189	393.0	0	176189
+9	191705	98.2	0	191705
+10	196403	24.6	1	196403
+11	135410	6.1	1	135410
+12	172032	1.5	1	172032
+13	142443	0.4	1	142443
+14	139453	0.1	1	139453
+15	140261	0.0	1	140261
+16	127613	0.0	1	127613
+17	141045	0.0	1	141045
+18	145508	0.0	1	145508
+19	61757	0.0	1	61757
+20	97023	0.0	2	97023
+21	90106	0.0	2	90106
+22	85550	0.0	2	85550
+23	72642	0.0	2	72642
+24	72920	0.0	2	72920
+25	65492	0.0	2	65492
+26	57563	0.0	2	57563
+27	54733	0.0	2	54733
+28	59928	0.0	2	59928
+29	41393	0.0	2	41393
+30	49108	0.0	3	49108
+31	23838	0.0	3	23838
+32	37226	0.0	3	37226
+33	26212	0.0	3	26212
+34	29751	0.0	3	29751
+35	22545	0.0	3	22545
+36	23175	0.0	3	23175
+37	18672	0.0	3	18672
+38	16053	0.0	3	16053
+39	13969	0.0	3	13969
+40	11682	0.0	4	11682
+41	10476	0.0	4	10476
+42	10739	0.0	4	10739
+43	8515	0.0	4	8515
+44	7287	0.0	4	7287
+45	6867	0.0	4	6867
+46	6170	0.0	4	6170
+47	4626	0.0	4	4626
+48	4038	0.0	4	4038
+49	4377	0.0	4	4377
+50	4703	0.0	5	4703
+51	5286	0.0	5	5286
+52	5055	0.0	5	5055
+53	3891	0.0	5	3891
+54	3728	0.0	5	3728
+55	3839	0.0	5	3839
+56	4944	0.0	5	4944
+57	7121	0.0	5	7121
+58	7219	0.0	5	7219
+59	5116	0.0	5	5116
+60	7817	0.0	6	7817
+61	10532	0.0	6	10532
+62	26665	0.0	6	26665
+63	53960	0.0	6	53960
+64	17759	0.0	6	17759
+65	22284	0.0	6	22284
+66	49172	0.0	6	49172
+67	173170	0.0	6	173170
+68	380144	0.0	6	380144
+69	1270585	0.0	6	1270585
+70	552214	0.0	7	552214
+71	201199	0.0	7	201199
+72	72347	0.0	7	72347
+73	21280	0.0	7	21280
+74	11117	0.0	7	11117
+75	6492	0.0	7	6492
+76	5119	0.0	7	5119
+77	6705	0.0	7	6705
+78	6642	0.0	7	6642
+79	6064	0.0	7	6064
+80	5659	0.0	8	5659
+81	5193	0.0	8	5193
+82	4999	0.0	8	4999
+83	4639	0.0	8	4639
+84	4373	0.0	8	4373
+85	4621	0.0	8	4621
+86	4757	0.0	8	4757
+87	5135	0.0	8	5135
+88	4925	0.0	8	4925
+89	4758	0.0	8	4758
+90	5314	0.0	9	5314
+91	5626	0.0	9	5626
+92	5942	0.0	9	5942
+93	6196	0.0	9	6196
+94	6672	0.0	9	6672
+95	7356	0.0	9	7356
+96	8416	0.0	9	8416
+97	9216	0.0	9	9216
+98	10374	0.0	9	10374
+99	11835	0.0	9	11835
+100	23941	0.0	10	23941
+101	99608	0.0	10	99608
+
+
+RUN STATISTICS FOR INPUT FILE: SRR6995993.fastq.gz
+=============================================
+25752634 sequences processed in total
+Sequences removed because they became shorter than the length cutoff of 20 bp:	3240159 (12.6%)
+Sequences removed because they were longer than the upper length cutoff:	0 (0.0%)
+Sequences removed because of too many N bases:	0 (0.0%)
+

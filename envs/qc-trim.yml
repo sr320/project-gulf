@@ -1,0 +1,9 @@
+name: qc-trim
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - fastqc>=0.12
+  - trim-galore=2.3.0
+  - multiqc>=1.21
+  - pigz

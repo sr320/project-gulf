@@ -1,0 +1,14 @@
+Module	Section	Sample Name	Source
+Trim Galore	all_sections	SRR6995993	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/trim-galore/SRR6995993.fastq.gz_trimming_report.json
+Trim Galore	all_sections	SRR6995994	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/trim-galore/SRR6995994.fastq.gz_trimming_report.json
+Trim Galore	all_sections	SRR6995995	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/trim-galore/SRR6995995.fastq.gz_trimming_report.json
+Trim Galore	all_sections	SRR6995996	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/trim-galore/SRR6995996.fastq.gz_trimming_report.json
+Trim Galore	all_sections	SRR6995997	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/trim-galore/SRR6995997.fastq.gz_trimming_report.json
+Trim Galore	all_sections	SRR6995998	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/trim-galore/SRR6995998.fastq.gz_trimming_report.json
+FastQC	all_sections	SRR6995993	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/fastqc-raw/SRR6995993_fastqc.zip
+FastQC	all_sections	SRR6995994	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/fastqc-raw/SRR6995994_fastqc.zip
+FastQC	all_sections	SRR6995995	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/fastqc-raw/SRR6995995_fastqc.zip
+FastQC	all_sections	SRR6995996	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/fastqc-raw/SRR6995996_fastqc.zip
+FastQC	all_sections	SRR6995997	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/fastqc-raw/SRR6995997_fastqc.zip
+FastQC	all_sections	SRR6995998	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/fastqc-raw/SRR6995998_fastqc.zip
+Snippy	snippy	multiqc	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/multiqc/SRP139854-read-QC_multiqc_report_data/multiqc.log

@@ -1,0 +1,12 @@
+# Mirrors the tools used from the existing `myflow` env
+# (/mmfs1/gscratch/srlab/sr320/miniforge3/envs/myflow) in steps 03 onward.
+name: bismark
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bismark=0.25.1
+  - bowtie2=2.5.4
+  - samtools=1.22
+  - bedtools=2.31.1
+  - pigz

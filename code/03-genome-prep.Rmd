@@ -1,0 +1,114 @@
+---
+title: "03 - Reference genome and Bismark index"
+output: html_document
+---
+
+Download the *C. virginica* C_virginica-3.0 assembly (GCF_002022765.2) from NCBI,
+verify the files against NCBI's checksums, and build a Bowtie2 Bismark index.
+
+Besides the genome FASTA and GFF, this also grabs two files for step 7:
+the GO annotations (`gene_ontology.gaf.gz`) and the RepeatMasker output (`rm.out.gz`, for a TE track).
+
+- Output genome and index: `data/genome/` (gitignored)
+- Output checks: `output/03-genome-prep/`
+
+Uses Bismark, Bowtie2 and samtools from the existing `myflow` env.
+`envs/bismark.yml` pins the same versions if the env needs to be rebuilt.
+
+```{r setup, include=FALSE}
+# Paths are relative to code/, so chunks work the same run one at a time or knitted
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE)
+```
+
+# Download
+
+```{bash download}
+set -euo pipefail
+
+base=https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/022/765/GCF_002022765.2_C_virginica-3.0
+prefix=GCF_002022765.2_C_virginica-3.0
+
+mkdir -p ../data/genome ../output/03-genome-prep
+cd ../data/genome
+
+for suffix in genomic.fna.gz genomic.gff.gz gene_ontology.gaf.gz rm.out.gz; do
+  f=${prefix}_${suffix}
+  if [[ -s "${f}" ]]; then
+    echo "${f}: already downloaded, skipping"
+  else
+    curl --fail --silent --show-error --retry 3 -O "${base}/${f}"
+  fi
+done
+
+curl --fail --silent --show-error --retry 3 -o md5checksums.txt "${base}/md5checksums.txt"
+ls -lh
+```
+
+# Verify checksums
+
+Check each downloaded file against NCBI's `md5checksums.txt`. The chunk fails if any file doesn't match.
+
+```{bash md5}
+set -euo pipefail
+
+cd ../data/genome
+grep -E "3\.0_(genomic\.fna|genomic\.gff|gene_ontology\.gaf|rm\.out)\.gz$" md5checksums.txt \
+  | sed 's#  \./#  #' \
+  | md5sum -c - \
+  | tee ../../output/03-genome-prep/md5-check.txt
+```
+
+# Prepare the FASTA
+
+`bismark_genome_preparation` only picks up `.fa`/`.fasta` files, not NCBI's `.fna`,
+so decompress the genome into its own folder with a `.fa` name.
+
+```{bash fasta}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/myflow/bin:$PATH
+
+genome_dir=../data/genome/bismark
+fa=${genome_dir}/C_virginica-3.0.fa
+mkdir -p "${genome_dir}"
+
+if [[ ! -s "${fa}" ]]; then
+  gzip -dc ../data/genome/GCF_002022765.2_C_virginica-3.0_genomic.fna.gz > "${fa}"
+fi
+
+samtools faidx "${fa}"
+cut -f1,2 "${fa}.fai" > ../output/03-genome-prep/chrom-sizes.tsv
+```
+
+```{r genome-summary}
+sizes <- read.delim("../output/03-genome-prep/chrom-sizes.tsv", header = FALSE,
+                    col.names = c("seqid", "length"))
+cat("Sequences:", nrow(sizes), "\n")
+cat("Total length (Mb):", round(sum(sizes$length) / 1e6, 1), "\n")
+head(sizes[order(-sizes$length), ], 12)
+```
+
+# Build the Bismark index
+
+Builds the C->T and G->A converted genomes and indexes each with Bowtie2.
+`--parallel 4` runs 4 threads for each of the two indexes (8 cores total).
+This takes about an hour, so run it on a compute node.
+
+```{bash bismark-index}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/myflow/bin:$PATH
+
+genome_dir=../data/genome/bismark
+
+if [[ -d "${genome_dir}/Bisulfite_Genome" ]]; then
+  echo "Bismark index already exists, skipping"
+else
+  bismark_genome_preparation \
+    --bowtie2 \
+    --parallel 4 \
+    --verbose \
+    "${genome_dir}" \
+    2>&1 | tee ../output/03-genome-prep/bismark_genome_preparation.log
+fi
+
+ls -R "${genome_dir}/Bisulfite_Genome" | head -30
+```

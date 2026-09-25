@@ -1,0 +1,127 @@
+---
+title: "02 - Read QC and trimming"
+output: html_document
+---
+
+Run FastQC on the raw reads, trim adapters and low-quality bases with Trim Galore,
+re-run FastQC on the trimmed reads, and summarize everything with MultiQC.
+
+- Input: `data/raw-reads/SRR*.fastq.gz` (from `01-download-data`), `data/sample_sheet.csv`
+- Output reads: `data/trimmed-reads/` (gitignored)
+- Output reports: `output/02-qc-trim/`
+
+Requires FastQC, Trim Galore and MultiQC. Create the environment once with:
+
+```
+conda env create -f envs/qc-trim.yml
+```
+
+```{r setup, include=FALSE}
+# Paths are relative to code/, so chunks work the same run one at a time or knitted
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE)
+```
+
+# FastQC on raw reads
+
+```{bash fastqc-raw}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/qc-trim/bin:$PATH
+
+out=../output/02-qc-trim/fastqc-raw
+mkdir -p "${out}"
+
+fastqc \
+  --threads 6 \
+  --outdir "${out}" \
+  ../data/raw-reads/SRR*.fastq.gz
+```
+
+# Trimming
+
+Trim Galore auto-detects the adapter and trims at Q20, dropping reads shorter than 20 bp.
+The reads are single-end 101 bp.
+`--no_poly_g` turns off poly-G trimming, which Trim Galore 2.3 switches on automatically.
+Poly-G tails are an artifact of 2-colour chemistry (NextSeq/NovaSeq); these reads are from a
+4-colour HiSeq 2500, so G runs are real sequence.
+
+`clip_5` and `clip_3` remove a fixed number of bases from each end of every read. They are 0 for now.
+Set them after checking the Bismark M-bias plots in step 4, then re-run this chunk and alignment.
+If the library turns out to be Zymo Pico Methyl-Seq, the Trim Galore docs suggest 10 on each end.
+
+```{bash trim}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/qc-trim/bin:$PATH
+
+clip_5=0
+clip_3=0
+
+reads_out=../data/trimmed-reads
+report_out=../output/02-qc-trim/trim-galore
+fastqc_out=../output/02-qc-trim/fastqc-trimmed
+mkdir -p "${reads_out}" "${report_out}" "${fastqc_out}"
+
+clip_args=()
+if (( clip_5 > 0 )); then clip_args+=(--clip_R1 "${clip_5}"); fi
+if (( clip_3 > 0 )); then clip_args+=(--three_prime_clip_R1 "${clip_3}"); fi
+
+for fq in ../data/raw-reads/SRR*.fastq.gz; do
+  trim_galore \
+    --cores 20 \
+    --quality 20 \
+    --length 20 \
+    --no_poly_g \
+    "${clip_args[@]}" \
+    --fastqc \
+    --fastqc_args "--outdir ${fastqc_out}" \
+    --output_dir "${reads_out}" \
+    "${fq}"
+done
+
+mv "${reads_out}"/*_trimming_report.{txt,json} "${report_out}"/
+ls -lh "${reads_out}"
+```
+
+# MultiQC
+
+One report covering raw FastQC, trimming, and trimmed FastQC.
+
+```{bash multiqc}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/qc-trim/bin:$PATH
+
+multiqc \
+  --force \
+  --title "SRP139854 read QC" \
+  --outdir ../output/02-qc-trim/multiqc \
+  ../output/02-qc-trim
+```
+
+# Reads kept after trimming
+
+```{bash read-counts}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/qc-trim/bin:$PATH
+
+echo "run,reads_trimmed" > ../output/02-qc-trim/read-counts-trimmed.csv
+for fq in ../data/trimmed-reads/SRR*_trimmed.fq.gz; do
+  run=$(basename "${fq}" _trimmed.fq.gz)
+  n=$(( $(pigz -dc "${fq}" | wc -l) / 4 ))
+  echo "${run},${n}" >> ../output/02-qc-trim/read-counts-trimmed.csv
+done
+```
+
+```{r compare-counts}
+sample_sheet <- read.csv("../data/sample_sheet.csv")
+raw <- read.csv("../output/01-download-data/read-counts.csv")
+trimmed <- read.csv("../output/02-qc-trim/read-counts-trimmed.csv")
+
+counts <- Reduce(function(x, y) merge(x, y, by = "run"),
+                 list(sample_sheet[, c("run", "sample", "treatment")], raw, trimmed))
+counts$pct_kept <- round(100 * counts$reads_trimmed / counts$reads, 2)
+counts <- counts[order(counts$treatment, counts$sample), ]
+
+stopifnot(nrow(counts) == nrow(sample_sheet))
+
+write.csv(counts, "../output/02-qc-trim/read-counts-summary.csv", row.names = FALSE, quote = FALSE)
+counts
+```
