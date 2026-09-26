@@ -1,0 +1,7 @@
+
+Total number of alignments analysed in ../data/bismark/SRR6995994.nonCG_filtered.bam:	557683
+Total number duplicated alignments removed:	364926 (65.44%)
+Duplicated alignments were found at:	68331 different position(s)
+
+Total count of deduplicated leftover sequences: 192757 (34.56% of total)
+

@@ -38,8 +38,19 @@ fastqc \
 
 # Trimming
 
-Trim Galore auto-detects the adapter and trims at Q20, dropping reads shorter than 20 bp.
+Trim Galore trims adapters and bases below Q20, dropping reads shorter than 20 bp.
 The reads are single-end 101 bp.
+
+The adapters are given explicitly instead of auto-detected. With auto-detection, Trim Galore searches
+only for the first 13 bp of the Illumina adapter (`AGATCGGAAGAGC`), which missed many adapter dimers:
+1.6–6.5% of trimmed reads in most samples, and 22% in HB30, were still mostly adapter.
+They were TruSeq adapter with sequencing errors in the first bases (`GACCGGAAGAGC…`) or with the
+first four bases missing (`CGGAAGAGC…`). Two adapters catch both:
+
+- the full 33 bp TruSeq adapter, which tolerates a few mismatches;
+- the same adapter without its first four bases, for dimers that start mid-adapter.
+
+On 500,000 HB30 reads this cut leftover adapter from 18% to 0.03%.
 `--no_poly_g` turns off poly-G trimming, which Trim Galore 2.3 switches on automatically.
 Poly-G tails are an artifact of 2-colour chemistry (NextSeq/NovaSeq); these reads are from a
 4-colour HiSeq 2500, so G runs are real sequence.
@@ -70,6 +81,8 @@ for fq in ../data/raw-reads/SRR*.fastq.gz; do
     --quality 20 \
     --length 20 \
     --no_poly_g \
+    --adapter AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC \
+    --adapter CGGAAGAGCACACGTCTGAACTCCAGTCAC \
     "${clip_args[@]}" \
     --fastqc \
     --fastqc_args "--outdir ${fastqc_out}" \
@@ -79,6 +92,27 @@ done
 
 mv "${reads_out}"/*_trimming_report.{txt,json} "${report_out}"/
 ls -lh "${reads_out}"
+```
+
+## Check for leftover adapter
+
+Count reads in the first 500,000 of each trimmed file that still contain the adapter core
+(`GAAGAGCACACGTCTGAAC`). This should be well under 1% for every sample.
+
+```{bash adapter-check}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/qc-trim/bin:$PATH
+
+echo "run,reads_checked,pct_with_adapter" > ../output/02-qc-trim/leftover-adapter.csv
+for fq in ../data/trimmed-reads/SRR*_trimmed.fq.gz; do
+  run=$(basename "${fq}" _trimmed.fq.gz)
+  # head closes the pipe early on purpose, so ignore pigz's SIGPIPE exit
+  { pigz -dc "${fq}" || true; } | head -n 2000000 \
+    | awk -v run="${run}" 'NR % 4 == 2 { n++; if (index($0, "GAAGAGCACACGTCTGAAC")) a++ }
+        END { printf "%s,%d,%.2f\n", run, n, 100 * a / n }' \
+    >> ../output/02-qc-trim/leftover-adapter.csv
+done
+cat ../output/02-qc-trim/leftover-adapter.csv
 ```
 
 # MultiQC

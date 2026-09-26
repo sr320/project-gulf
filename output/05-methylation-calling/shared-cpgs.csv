@@ -1,0 +1,5 @@
+version,min_cov,all_6,without_HB30,fold_gain_dropping_HB30
+dedup,5,32891,174471,5.3
+dedup,10,9995,80785,8.1
+nodedup,5,57917,229905,4
+nodedup,10,30652,144105,4.7

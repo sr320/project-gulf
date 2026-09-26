@@ -1,0 +1,4 @@
+GCF_002022765.2_C_virginica-3.0_gene_ontology.gaf.gz: OK
+GCF_002022765.2_C_virginica-3.0_genomic.fna.gz: OK
+GCF_002022765.2_C_virginica-3.0_genomic.gff.gz: OK
+GCF_002022765.2_C_virginica-3.0_rm.out.gz: OK

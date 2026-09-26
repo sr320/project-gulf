@@ -1,0 +1,20 @@
+Processing single-end Bismark output file(s) (SAM format):
+../data/bismark/SRR6995993.bam
+
+Checking file >>../data/bismark/SRR6995993.bam<< for signs of file truncation...
+
+samtools view: writing to standard output failed: Broken pipe
+samtools view: error reading file "../data/bismark/SRR6995993.bam": Broken pipe
+samtools view: error closing standard output: -1
+
+Using a threshold of >> 3 << methylation calls in non-CG context before a read gets removed
+
+NON-CONVERSION SUMMARY
+======================
+Analysed sequences (single-end) in file >> ../data/bismark/SRR6995993.bam << in total:	11084149
+Sequences removed because of apparent non-bisulfite conversion (at least 3 non-CG calls per read):	2215353 (20.0%)
+
+Please continue with deduplication or methylation extraction now (depending on your application)
+
+filter_non_conversion completed in 0d 0h 3m 17s
+

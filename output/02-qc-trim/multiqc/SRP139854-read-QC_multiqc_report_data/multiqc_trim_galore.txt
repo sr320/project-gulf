@@ -1,7 +1,7 @@
 Sample	trim_galore_version	mode	total_reads	reads_with_adapter	reads_written	reads_too_short	reads_too_long	reads_too_many_n	reads_discarded_untrimmed	total_bp_processed	total_bp_written	quality_trimmed_bp	pairs_analyzed	pairs_removed	pairs_removed_n	pairs_removed_too_long	r1_unpaired	r2_unpaired	poly_a_reads_trimmed	poly_a_bases_removed	poly_g_reads_trimmed	poly_g_bases_removed	rrbs_trimmed_3prime	rrbs_trimmed_5prime	rrbs_r2_clipped_5prime
-SRR6995993	2.3.0	single-end	25752634	15393563	22512475	3240159	0	0	0	2601016034	2139832054	168252428	None	None	None	None	None	None	0	0	0	0	0	0	0
-SRR6995994	2.3.0	single-end	9188940	7714396	4199163	4989777	0	0	0	928082940	345427496	208253890	None	None	None	None	None	None	0	0	0	0	0	0	0
-SRR6995995	2.3.0	single-end	39780221	23668832	33298817	6481404	0	0	0	4017802321	3167008218	316184920	None	None	None	None	None	None	0	0	0	0	0	0	0
-SRR6995996	2.3.0	single-end	33409414	17611436	29631713	3777701	0	0	0	3374350814	2847160177	220159975	None	None	None	None	None	None	0	0	0	0	0	0	0
-SRR6995997	2.3.0	single-end	17327210	10263059	13401862	3925348	0	0	0	1750048210	1260878305	185921084	None	None	None	None	None	None	0	0	0	0	0	0	0
-SRR6995998	2.3.0	single-end	24792684	13652723	21881170	2911514	0	0	0	2504061084	2102959062	162739913	None	None	None	None	None	None	0	0	0	0	0	0	0
+SRR6995993	2.3.0	single-end	25752634	20647416	21578440	4174194	0	0	0	2601016034	2069942836	168252428	None	None	None	None	None	None	0	0	0	0	0	0	0
+SRR6995994	2.3.0	single-end	9188940	8607160	2835345	6353595	0	0	0	928082940	251483409	208253890	None	None	None	None	None	None	0	0	0	0	0	0	0
+SRR6995995	2.3.0	single-end	39780221	31777024	31440951	8339270	0	0	0	4017802321	3030979890	316184920	None	None	None	None	None	None	0	0	0	0	0	0	0
+SRR6995996	2.3.0	single-end	33409414	24776890	28523919	4885495	0	0	0	3374350814	2763989248	220159975	None	None	None	None	None	None	0	0	0	0	0	0	0
+SRR6995997	2.3.0	single-end	17327210	14067454	12321632	5005578	0	0	0	1750048210	1182657794	185921084	None	None	None	None	None	None	0	0	0	0	0	0	0
+SRR6995998	2.3.0	single-end	24792684	19028308	20934759	3857925	0	0	0	2504061084	2032716317	162739913	None	None	None	None	None	None	0	0	0	0	0	0	0

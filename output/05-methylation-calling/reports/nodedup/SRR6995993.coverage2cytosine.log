@@ -1,0 +1,63 @@
+Output will be written into the directory: /mmfs1/gscratch/scrubbed/sr320/github/project-gulf/data/methylation/nodedup/
+Summary of parameters for genome-wide cytosine report:
+==============================================================================
+Coverage infile:				../data/methylation/nodedup/SRR6995993.bismark.cov.gz
+Output directory:				>/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/data/methylation/nodedup/<
+Parent directory:				>/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/code/<
+Genome directory:				>/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/data/genome/bismark/<
+Coverage threshold				0 (all positions will be reported, default)
+CX context:					no (CpG context only, default)
+Pooling CpG top/bottom strand evidence:		yes
+Genome coordinates used:			1-based (default)
+GZIP compression:				yes
+Split by chromosome:				no
+
+
+Now reading in and storing sequence information of the genome specified in: /mmfs1/gscratch/scrubbed/sr320/github/project-gulf/data/genome/bismark/
+
+chr NC_035780.1 (65668440 bp)
+chr NC_035781.1 (61752955 bp)
+chr NC_035782.1 (77061148 bp)
+chr NC_035783.1 (59691872 bp)
+chr NC_035784.1 (98698416 bp)
+chr NC_035785.1 (51258098 bp)
+chr NC_035786.1 (57830854 bp)
+chr NC_035787.1 (75944018 bp)
+chr NC_035788.1 (104168038 bp)
+chr NC_035789.1 (32650045 bp)
+chr NC_007175.2 (17244 bp)
+
+Stored sequence information of 11 chromosomes/scaffolds in total
+
+==============================================================================
+Methylation information will now be written into a genome-wide cytosine report
+==============================================================================
+
+Adding context-specific methylation summaries
+
+>>> Writing genome-wide cytosine report to: SRR6995993.CpG_report.txt.gz <<<
+
+>>> Writing all cytosine context summary file to: SRR6995993.cytosine_context_summary.txt <<<
+
+Storing all covered cytosine positions for chromosome: NC_007175.2
+Writing cytosine report for chromosome NC_007175.2 (stored 418 different covered positions)
+Writing cytosine report for chromosome NC_035780.1 (stored 372883 different covered positions)
+Writing cytosine report for chromosome NC_035781.1 (stored 343171 different covered positions)
+Writing cytosine report for chromosome NC_035782.1 (stored 401658 different covered positions)
+Writing cytosine report for chromosome NC_035783.1 (stored 338646 different covered positions)
+Writing cytosine report for chromosome NC_035784.1 (stored 596846 different covered positions)
+Writing cytosine report for chromosome NC_035785.1 (stored 201862 different covered positions)
+Writing cytosine report for chromosome NC_035786.1 (stored 225432 different covered positions)
+Writing cytosine report for chromosome NC_035787.1 (stored 332054 different covered positions)
+Writing cytosine report for chromosome NC_035788.1 (stored 405474 different covered positions)
+Writing cytosine report for last chromosome NC_035789.1 (stored 127838 different covered positions)
+Finished writing out cytosine report for covered chromosomes (processed 11 chromosomes/scaffolds in total)
+
+Now processing chromosomes that were not covered by any methylation calls in the coverage file...
+All chromosomes in the genome were covered by at least some reads. coverage2cytosine processing complete.
+
+Now merging top and bottom strand CpGs into a single CG dinucleotide entity (reading from file >>SRR6995993.CpG_report.txt.gz<<, in output directory '/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/data/methylation/nodedup/')
+>>> Writing a new coverage file with top and bottom strand CpG methylation evidence merged to SRR6995993.CpG_report.merged_CpG_evidence.cov.gz <<<
+
+CpG merging complete. Good luck finding DMRs with bsseq!
+

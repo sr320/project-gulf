@@ -13,3 +13,9 @@
 *.bai
 *.bt2
 data/genome/
+data/bismark/
+data/methylation/
+*.cov.gz
+*.bedGraph.gz
+*_context_*.txt.gz
+*.CpG_report.txt.gz

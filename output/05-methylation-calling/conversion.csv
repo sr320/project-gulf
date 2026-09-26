@@ -1,0 +1,13 @@
+run,sample,treatment,version,CpG_meth_pct,nonCpG_meth_pct,conversion_pct
+SRR6995995,NB11,control,dedup,52.8,1.3,98.7
+SRR6995997,NB3,control,dedup,72.6,1.9,98.1
+SRR6995998,NB6,control,dedup,33,1,99
+SRR6995993,HB16,oil,dedup,53.7,1.3,98.7
+SRR6995996,HB2,oil,dedup,51.9,1.2,98.8
+SRR6995994,HB30,oil,dedup,78.3,2.2,97.8
+SRR6995995,NB11,control,nodedup,65.4,1.4,98.6
+SRR6995997,NB3,control,nodedup,79.9,1.9,98.1
+SRR6995998,NB6,control,nodedup,38.3,1.1,98.9
+SRR6995993,HB16,oil,nodedup,64.9,1.4,98.6
+SRR6995996,HB2,oil,nodedup,62,1.3,98.7
+SRR6995994,HB30,oil,nodedup,83,2.2,97.8

@@ -4,9 +4,11 @@ output: html_document
 ---
 
 Align the trimmed single-end MBD-BS reads to C_virginica-3.0 with Bismark (Bowtie2),
-then deduplicate. Both the deduplicated and non-deduplicated BAMs are kept so step 5 can compare them.
+remove reads that were never bisulfite-converted, then deduplicate.
+Both the deduplicated and non-deduplicated BAMs are kept so step 5 can compare them.
 
-Before the full run, a small test on each sample decides whether the library is directional.
+Before the full run, small tests on the first 500,000 reads of each sample
+decide whether the library is directional and which `score_min` (mismatch tolerance) to use.
 
 - Input: `data/trimmed-reads/SRR*_trimmed.fq.gz` (from `02-qc-trim`), `data/genome/bismark/` (from `03-genome-prep`)
 - Output BAMs: `data/bismark/` (gitignored)
@@ -15,95 +17,204 @@ Before the full run, a small test on each sample decides whether the library is 
 Uses Bismark, Bowtie2 and samtools from the existing `myflow` env.
 Alignment takes a few hours per sample, so run this on a compute node with 20+ cores.
 
+Every step skips a sample only if its output is newer than that sample's trimmed reads,
+so re-trimming in `02-qc-trim` automatically makes these chunks redo the work.
+
 ```{r setup, include=FALSE}
 # Paths are relative to code/, so chunks work the same run one at a time or knitted
 knitr::opts_chunk$set(echo = TRUE, eval = TRUE)
 ```
 
-# Is the library directional?
+# Unconverted reads
 
-In a directional library, reads only come from the original top and bottom strands (OT, OB).
-In a non-directional library (for example Zymo Pico Methyl-Seq), reads also come from their
-complements (CTOT, CTOB) in roughly equal numbers.
+A sizeable share of reads in every sample were never bisulfite-converted: both C and G stay at normal levels,
+where a converted read loses nearly all of one of them. Bismark calls every C in such a read methylated,
+which inflates methylation in all contexts, including CpG.
 
-Align the first 500,000 reads of each sample in `--non_directional` mode, which searches all four strands,
-and count how many alignments land on the complementary strands.
+Estimated from base content in the first 500,000 trimmed reads (2026-09-25, before the adapter fix in `02`):
 
-```{bash directional-test}
+| Sample | Group | Converted-looking | Unconverted-looking | CHH methylation (Bismark, default `score_min`) |
+|---|---|---|---|---|
+| HB16 | oil | 53% | 17% | 23% |
+| NB6 | control | 61% | 24% | 22% |
+| NB11 | control | 48% | 24% | 33% |
+| HB2 | oil | 50% | 27% | 36% |
+| NB3 | control | 34% | 31% | 43% |
+| HB30 | oil | 14% | 63% | 73% |
+
+CHH methylation in oyster should be under 1%, so these reads have to go.
+Bismark's `filter_non_conversion` removes any read with 3 or more methylated non-CpG calls,
+which a genuinely converted oyster read almost never has. It runs on every BAM below, tests included.
+
+# Alignment tests
+
+Aligns the first 500,000 reads of each sample twice, with two `score_min` settings,
+in `--non_directional` mode (all four strands searched). Each test BAM is filtered for unconverted reads,
+then the strand of every remaining alignment is counted. Only the reports are kept.
+
+- `L,0,-0.2`: Bismark's default, about 1 mismatch per 50 bp.
+- `L,0,-0.6`: looser, about 1 mismatch per 17 bp. *C. virginica* is highly polymorphic, so this may map more reads.
+
+This takes about 10 minutes per sample and setting with 16 cores.
+
+```{bash tests}
 set -euo pipefail
 export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/myflow/bin:$PATH
 
 genome=../data/genome/bismark
-out=../output/04-bismark-align/directional-test
-mkdir -p "${out}"
 
-for fq in ../data/trimmed-reads/SRR*_trimmed.fq.gz; do
-  run=$(basename "${fq}" _trimmed.fq.gz)
-  if [[ -s "${out}/${run}_SE_report.txt" ]]; then
-    echo "${run}: test already done, skipping"
-    continue
-  fi
-  bismark \
-    --genome "${genome}" \
-    --non_directional \
-    --upto 500000 \
-    -p 4 \
-    --output_dir "${out}" \
-    --temp_dir "${out}" \
-    "${fq}"
-  # Rename to match the report names used in the full run below
-  mv "${out}/${run}_trimmed_bismark_bt2_SE_report.txt" "${out}/${run}_SE_report.txt"
+for score_min in "L,0,-0.2" "L,0,-0.6"; do
+  out=../output/04-bismark-align/tests/${score_min//,/_}
+  mkdir -p "${out}"
+
+  for fq in ../data/trimmed-reads/SRR*_trimmed.fq.gz; do
+    run=$(basename "${fq}" _trimmed.fq.gz)
+    if [[ -s "${out}/${run}.strands.tsv" && "${out}/${run}.strands.tsv" -nt "${fq}" ]]; then
+      echo "${run} ${score_min}: test already done, skipping"
+      continue
+    fi
+
+    bismark \
+      --genome "${genome}" \
+      --non_directional \
+      --score_min "${score_min}" \
+      --upto 500000 \
+      -p 10 \
+      --output_dir "${out}" \
+      --temp_dir "${out}" \
+      "${fq}"
+    mv "${out}/${run}_trimmed_bismark_bt2.bam" "${out}/${run}.bam"
+    mv "${out}/${run}_trimmed_bismark_bt2_SE_report.txt" "${out}/${run}_SE_report.txt"
+
+    filter_non_conversion --single --threshold 3 "${out}/${run}.bam"
+
+    # Strand of each converted alignment, from Bismark's XR (read) and XG (genome) conversion tags
+    samtools view "${out}/${run}.nonCG_filtered.bam" \
+      | awk '{ for (i = 12; i <= NF; i++) { if ($i ~ /^XR:Z:/) xr = substr($i, 6); if ($i ~ /^XG:Z:/) xg = substr($i, 6) }
+               n[xr "/" xg]++ }
+             END { printf "OT\t%d\nOB\t%d\nCTOT\t%d\nCTOB\t%d\n", n["CT/CT"], n["CT/GA"], n["GA/CT"], n["GA/GA"] }' \
+      > "${out}/${run}.strands.tsv"
+
+    rm -f "${out}/${run}".*bam
+  done
 done
-
-# Only the reports are needed from the test
-rm -f "${out}"/*.bam
 ```
 
-```{r directional-summary}
+```{r tests-summary}
 sample_sheet <- read.csv("../data/sample_sheet.csv")
 
-strand_counts <- function(report) {
-  lines <- readLines(report)
-  get <- function(tag) as.numeric(sub("^[^\t]+\t([0-9]+).*", "\\1", grep(paste0("^", tag, ":\t"), lines, value = TRUE)))
-  c(OT = get("CT/CT"), OB = get("CT/GA"), CTOT = get("GA/CT"), CTOB = get("GA/GA"))
+read_field <- function(lines, pattern) {
+  hit <- grep(pattern, lines, value = TRUE)
+  if (length(hit) == 0) return(NA)
+  as.numeric(sub("^[^\t]*\t\\s*([0-9.]+).*", "\\1", hit[1]))
 }
 
-reports <- list.files("../output/04-bismark-align/directional-test", "_SE_report.txt$", full.names = TRUE)
-strands <- as.data.frame(t(sapply(reports, strand_counts)))
-strands$run <- sub("_SE_report.txt$", "", basename(reports))
-strands$pct_complementary <- round(100 * (strands$CTOT + strands$CTOB) /
-                                     rowSums(strands[, c("OT", "OB", "CTOT", "CTOB")]), 2)
+# "Sequences removed because of apparent non-bisulfite conversion (...):\t1234 (5.67%)"
+read_removed <- function(file) {
+  hit <- grep("^Sequences removed because of apparent non-bisulfite conversion", readLines(file), value = TRUE)
+  as.numeric(sub(".*\t([0-9]+) \\(.*", "\\1", hit[1]))
+}
 
-strands <- merge(sample_sheet[, c("run", "sample", "treatment")], strands, by = "run")
-rownames(strands) <- NULL
-strands
+test_stats <- function(dir) {
+  runs <- sub("\\.strands\\.tsv$", "", list.files(dir, "\\.strands\\.tsv$"))
+  do.call(rbind, lapply(runs, function(run) {
+    align   <- readLines(file.path(dir, paste0(run, "_SE_report.txt")))
+    strands <- read.delim(file.path(dir, paste0(run, ".strands.tsv")), header = FALSE, col.names = c("strand", "n"))
+    n <- setNames(strands$n, strands$strand)
+    reads    <- read_field(align, "^Sequences analysed in total:")
+    aligned  <- read_field(align, "^Number of alignments with a unique best hit")
+    removed  <- read_removed(file.path(dir, paste0(run, ".non-conversion_filtering.txt")))
+    data.frame(
+      run                   = run,
+      score_min             = gsub("_", ",", basename(dir)),
+      mapping_pct           = read_field(align, "^Mapping efficiency:"),
+      CHH_meth_pct_unfiltered = read_field(align, "^C methylated in CHH context:"),
+      unconverted_pct       = round(100 * removed / aligned, 1),
+      converted_mapping_pct = round(100 * (aligned - removed) / reads, 1),
+      OT = n[["OT"]], OB = n[["OB"]], CTOT = n[["CTOT"]], CTOB = n[["CTOB"]],
+      pct_complementary     = round(100 * (n[["CTOT"]] + n[["CTOB"]]) / sum(n), 1)
+    )
+  }))
+}
+
+tests <- do.call(rbind, lapply(list.dirs("../output/04-bismark-align/tests", recursive = FALSE), test_stats))
+tests <- merge(sample_sheet[, c("run", "sample", "treatment")], tests, by = "run")
+tests <- tests[order(tests$treatment, tests$sample, tests$score_min), ]
+rownames(tests) <- NULL
+
+write.csv(tests, "../output/04-bismark-align/tests/test-summary.csv", row.names = FALSE, quote = FALSE)
+tests
 ```
 
-A directional library shows only a few percent of alignments on CTOT/CTOB (spurious hits);
-a non-directional one shows close to 50%. The call below uses 10% as the cutoff.
+Columns:
+
+- **mapping_pct** and **CHH_meth_pct_unfiltered**: straight from Bismark, before removing unconverted reads.
+- **unconverted_pct**: share of aligned reads that `filter_non_conversion` removed.
+- **converted_mapping_pct**: aligned, converted reads as a share of the 500,000 tested. This is the number that matters for choosing `score_min`.
+- **OT/OB/CTOT/CTOB** and **pct_complementary**: strands of the converted alignments only.
+
+## Is the library directional?
+
+Bisulfite reads can come from four strands: the original top and bottom strands (OT, OB)
+and their complements (CTOT, CTOB).
+
+- **Directional** libraries: reads come only from OT/OB.
+- **PBAT-style** libraries (adapters added after bisulfite conversion): read 1 comes mostly from CTOT/CTOB.
+- **Fully non-directional** libraries: reads come from all four strands in roughly equal numbers.
+
+**First result (2026-09-25, before the adapter fix and without filtering unconverted reads):**
+81–96% of alignments were on CTOT/CTOB in every sample. That points to a PBAT-style library rather than
+a fully non-directional one (~50%). `--pbat` would search only CTOT/CTOB, but stray OT/OB hits in a
+pure PBAT library would be about 1–2%, and these were 4–19%, so they looked like real reads.
+Unconverted reads may have caused some of those OT/OB hits; the filtered strand counts above settle it.
+
+The call below uses the default `score_min` and a 10% cutoff on the filtered strand counts:
+under 10% on CTOT/CTOB is `directional`; anything above is `non_directional`, which searches all four strands.
+It never picks `--pbat` on its own, because that drops every OT/OB read. Choose it by hand
+(write `pbat` to `library-type.txt`) only if OT/OB drop to about 1–2% after filtering.
+
 **Check the table above before trusting it.** Every sample should give the same answer.
 
 ```{r directional-call}
-is_non_directional <- strands$pct_complementary > 10
-stopifnot("Samples disagree on directionality - check the table" =
-            all(is_non_directional) || !any(is_non_directional))
+default <- tests[tests$score_min == "L,0,-0.2", ]
+calls <- ifelse(default$pct_complementary < 10, "directional", "non_directional")
+print(setNames(calls, default$sample))
+stopifnot("Samples disagree on library type - check the table" = length(unique(calls)) == 1)
 
-library_type <- if (all(is_non_directional)) "non_directional" else "directional"
+library_type <- unique(calls)
 writeLines(library_type, "../output/04-bismark-align/library-type.txt")
 cat("Library type:", library_type, "\n")
 ```
 
-If the library is non-directional, it is probably Zymo Pico Methyl-Seq.
-Consider setting `clip_5`/`clip_3` to 10 in `02-qc-trim` (see the M-bias plots from step 5 to confirm) and re-running from there.
+The kit is still unknown. PBAT-style and random-primed libraries often show a methylation bias over
+the first several bases of each read. Check the M-bias plots in step 5 before setting `clip_5`/`clip_3`
+in `02-qc-trim` and re-running from there.
+
+## Which `score_min`?
+
+```{r score-min-compare}
+cols <- c("run", "sample", "treatment", "converted_mapping_pct", "unconverted_pct")
+wide <- merge(tests[tests$score_min == "L,0,-0.2", cols],
+              tests[tests$score_min == "L,0,-0.6", cols],
+              by = c("run", "sample", "treatment"), suffixes = c(" (-0.2)", " (-0.6)"))
+wide$converted_mapping_gain <- wide$`converted_mapping_pct (-0.6)` - wide$`converted_mapping_pct (-0.2)`
+wide
+```
+
+The looser setting is worth it only if converted mapping goes up clearly in every sample.
+If the unconverted share also rises noticeably at `-0.6`, the extra alignments are probably low-quality.
+Set `score_min` in the alignment chunk below to whichever setting wins.
 
 # Align
 
 Reads the library type from the test above. Settings:
 
-- `--parallel 4` runs 4 Bismark instances, each using Bowtie2 with `-p 2`.
-  A directional run uses about 16 cores in total; non-directional uses about twice that, so lower `--parallel` if needed.
-- `score_min` is Bismark's default (`L,0,-0.2`, about 1 mismatch per 50 bp).
-  *C. virginica* is highly polymorphic, so if mapping rates are low, try a looser value such as `L,0,-0.6` and compare.
+- `--parallel 6` is sized for 28 cores. In non-directional mode each Bismark instance runs 4 Bowtie2 processes
+  (one per strand), each single-threaded because `-p` is left out (Bismark rejects `-p 1`; it only accepts 2 or more).
+  That is 6 × 4 = 24 Bowtie2 threads plus 6 single-threaded Perl processes.
+  Bismark's docs recommend more instances over more `-p` threads, since each instance's Perl step is the bottleneck.
+  Memory is about 40 GB (each Bowtie2 process loads a 1.6 GB index).
+- `score_min`: set this from the comparison above. It is Bismark's default (`L,0,-0.2`) until then.
 
 ```{bash align}
 set -euo pipefail
@@ -112,17 +223,18 @@ export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/myflow/bin:$PATH
 genome=../data/genome/bismark
 bam_dir=../data/bismark
 report_dir=../output/04-bismark-align/reports
-score_min="L,0,-0.2"
+score_min="L,0,-0.6"
 mkdir -p "${bam_dir}" "${report_dir}"
 
 library_type=$(cat ../output/04-bismark-align/library-type.txt)
 mode_args=()
 if [[ "${library_type}" == "non_directional" ]]; then mode_args+=(--non_directional); fi
+if [[ "${library_type}" == "pbat" ]]; then mode_args+=(--pbat); fi
 echo "Library type: ${library_type}"
 
 for fq in ../data/trimmed-reads/SRR*_trimmed.fq.gz; do
   run=$(basename "${fq}" _trimmed.fq.gz)
-  if [[ -s "${bam_dir}/${run}.bam" ]]; then
+  if [[ -s "${bam_dir}/${run}.bam" && "${bam_dir}/${run}.bam" -nt "${fq}" ]]; then
     echo "${run}: already aligned, skipping"
     continue
   fi
@@ -130,8 +242,7 @@ for fq in ../data/trimmed-reads/SRR*_trimmed.fq.gz; do
     --genome "${genome}" \
     "${mode_args[@]}" \
     --score_min "${score_min}" \
-    --parallel 4 \
-    -p 2 \
+    --parallel 6 \
     --output_dir "${bam_dir}" \
     --temp_dir "${bam_dir}" \
     "${fq}"
@@ -143,11 +254,61 @@ done
 ls -lh "${bam_dir}"
 ```
 
+# Remove unconverted reads
+
+Writes `SRR*.nonCG_filtered.bam` (reads kept) and `SRR*.nonCG_removed_seqs.bam` (reads removed, kept for inspection).
+
+`filter_non_conversion` is single-threaded, so all six samples run at once (about 2–3 cores each,
+counting its samtools read and write processes). Each sample's output goes to
+`output/04-bismark-align/reports/SRR*.filter.log`; the chunk fails if any sample fails.
+
+```{bash filter-non-conversion}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/myflow/bin:$PATH
+
+bam_dir=../data/bismark
+report_dir=../output/04-bismark-align/reports
+
+filter_one() {
+  local run=$1
+  local bam=${bam_dir}/${run}.bam
+  filter_non_conversion --single --threshold 3 "${bam}" > "${report_dir}/${run}.filter.log" 2>&1
+  mv "${bam_dir}/${run}.non-conversion_filtering.txt" "${report_dir}/"
+}
+
+pids=(); runs=()
+for fq in ../data/trimmed-reads/SRR*_trimmed.fq.gz; do
+  run=$(basename "${fq}" _trimmed.fq.gz)
+  out=${bam_dir}/${run}.nonCG_filtered.bam
+  if [[ -s "${out}" && "${out}" -nt "${bam_dir}/${run}.bam" ]]; then
+    echo "${run}: already filtered, skipping"
+    continue
+  fi
+  echo "${run}: filtering"
+  filter_one "${run}" &
+  pids+=($!); runs+=("${run}")
+done
+
+failed=0
+for i in "${!pids[@]}"; do
+  if wait "${pids[$i]}"; then
+    echo "${runs[$i]}: done"
+  else
+    echo "${runs[$i]}: FAILED, see ${report_dir}/${runs[$i]}.filter.log"
+    failed=1
+  fi
+done
+exit "${failed}"
+```
+
 # Deduplicate
 
 Removes reads that align to the same position and strand.
 MBD enrichment plus single-end reads means some of these "duplicates" may be real independent fragments,
-so the original BAMs are kept alongside the deduplicated ones.
+so the filtered BAMs are kept alongside the deduplicated ones.
+
+`deduplicate_bismark` is also single-threaded, so all six samples run at once.
+Each sample's output goes to `output/04-bismark-align/reports/SRR*.dedup.log`.
 
 ```{bash dedup}
 set -euo pipefail
@@ -156,55 +317,72 @@ export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/myflow/bin:$PATH
 bam_dir=../data/bismark
 report_dir=../output/04-bismark-align/reports
 
-for bam in "${bam_dir}"/SRR*.bam; do
-  [[ "${bam}" == *.deduplicated.bam ]] && continue
-  run=$(basename "${bam}" .bam)
-  if [[ -s "${bam_dir}/${run}.deduplicated.bam" ]]; then
-    echo "${run}: already deduplicated, skipping"
-    continue
-  fi
+dedup_one() {
+  local run=$1
   deduplicate_bismark \
     --single \
     --bam \
     --output_dir "${bam_dir}" \
-    "${bam}"
-  mv "${bam_dir}/${run}.deduplication_report.txt" "${report_dir}/"
+    "${bam_dir}/${run}.nonCG_filtered.bam" \
+    > "${report_dir}/${run}.dedup.log" 2>&1
+  mv "${bam_dir}/${run}.nonCG_filtered.deduplication_report.txt" "${report_dir}/"
+}
+
+pids=(); runs=()
+for fq in ../data/trimmed-reads/SRR*_trimmed.fq.gz; do
+  run=$(basename "${fq}" _trimmed.fq.gz)
+  out=${bam_dir}/${run}.nonCG_filtered.deduplicated.bam
+  if [[ -s "${out}" && "${out}" -nt "${bam_dir}/${run}.nonCG_filtered.bam" ]]; then
+    echo "${run}: already deduplicated, skipping"
+    continue
+  fi
+  echo "${run}: deduplicating"
+  dedup_one "${run}" &
+  pids+=($!); runs+=("${run}")
 done
+
+failed=0
+for i in "${!pids[@]}"; do
+  if wait "${pids[$i]}"; then
+    echo "${runs[$i]}: done"
+  else
+    echo "${runs[$i]}: FAILED, see ${report_dir}/${runs[$i]}.dedup.log"
+    failed=1
+  fi
+done
+
+ls -lh "${bam_dir}"
+exit "${failed}"
 ```
 
 # Alignment summary
 
-Bisulfite conversion efficiency is estimated from methylation in the CHH context,
-which should be close to zero in oysters: conversion ≈ 100 − CHH%.
-
 ```{r align-summary}
-read_field <- function(lines, pattern) {
-  hit <- grep(pattern, lines, value = TRUE)
-  if (length(hit) == 0) return(NA)
-  as.numeric(sub("^[^\t]*\t\\s*([0-9.]+).*", "\\1", hit[1]))
-}
+report_dir <- "../output/04-bismark-align/reports"
 
 summarize_run <- function(run) {
-  align <- readLines(file.path("../output/04-bismark-align/reports", paste0(run, "_SE_report.txt")))
-  dedup <- readLines(file.path("../output/04-bismark-align/reports", paste0(run, ".deduplication_report.txt")))
+  align <- readLines(file.path(report_dir, paste0(run, "_SE_report.txt")))
+  dedup <- readLines(file.path(report_dir, paste0(run, ".nonCG_filtered.deduplication_report.txt")))
+  aligned <- read_field(align, "^Number of alignments with a unique best hit")
+  removed <- read_removed(file.path(report_dir, paste0(run, ".non-conversion_filtering.txt")))
+  dup_pct <- as.numeric(sub(".*\\(([0-9.]+)%\\).*", "\\1",
+                            grep("^Total number duplicated alignments removed", dedup, value = TRUE)))
   data.frame(
-    run            = run,
-    reads          = read_field(align, "^Sequences analysed in total:"),
-    unique_aligned = read_field(align, "^Number of alignments with a unique best hit"),
-    mapping_pct    = read_field(align, "^Mapping efficiency:"),
-    CpG_meth_pct   = read_field(align, "^C methylated in CpG context:"),
-    CHG_meth_pct   = read_field(align, "^C methylated in CHG context:"),
-    CHH_meth_pct   = read_field(align, "^C methylated in CHH context:"),
-    dup_pct        = as.numeric(sub(".*\\(([0-9.]+)%\\).*", "\\1",
-                                    grep("^Total number duplicated alignments removed", dedup, value = TRUE)))
+    run                     = run,
+    reads                   = read_field(align, "^Sequences analysed in total:"),
+    unique_aligned          = aligned,
+    mapping_pct             = read_field(align, "^Mapping efficiency:"),
+    CHH_meth_pct_unfiltered = read_field(align, "^C methylated in CHH context:"),
+    unconverted_removed     = removed,
+    unconverted_pct         = round(100 * removed / aligned, 1),
+    converted_aligned       = aligned - removed,
+    dup_pct                 = dup_pct,
+    final_reads             = round((aligned - removed) * (1 - dup_pct / 100))
   )
 }
 
-runs <- sub("_SE_report.txt$", "", list.files("../output/04-bismark-align/reports", "_SE_report.txt$"))
+runs <- sub("_SE_report.txt$", "", list.files(report_dir, "_SE_report.txt$"))
 summary_tbl <- do.call(rbind, lapply(runs, summarize_run))
-summary_tbl$conversion_pct <- 100 - summary_tbl$CHH_meth_pct
-summary_tbl$dedup_aligned <- round(summary_tbl$unique_aligned * (1 - summary_tbl$dup_pct / 100))
-
 summary_tbl <- merge(sample_sheet[, c("run", "sample", "treatment")], summary_tbl, by = "run")
 summary_tbl <- summary_tbl[order(summary_tbl$treatment, summary_tbl$sample), ]
 rownames(summary_tbl) <- NULL
@@ -215,7 +393,11 @@ summary_tbl
 
 Things to check in the table:
 
-- **mapping_pct**: 40–60% is typical for bisulfite reads on oyster. Much lower suggests trying a looser `score_min`.
-- **conversion_pct**: should be above 99%. Lower means incomplete bisulfite conversion, which inflates methylation calls.
-- **CpG_meth_pct**: should be high for an MBD-enriched library, since the enrichment pulls down methylated DNA.
-- **dup_pct** and **dedup_aligned**: HB30 in particular — how many usable reads are left after deduplication.
+- **mapping_pct**: 40–60% is typical for bisulfite reads on oyster. The first 500,000-read tests gave 22–32%
+  with the default `score_min`, before the adapter fix and before removing unconverted reads.
+- **unconverted_pct**: share of aligned reads removed as unconverted. Expect roughly 20–30% in most samples and most of HB30.
+- **final_reads**: reads left after filtering and deduplication, which is what step 5 works with.
+  HB30 in particular — this decides whether it can stay in the analysis.
+
+Bisulfite conversion of the *remaining* reads is checked in step 5, from the methylation extractor's CHH calls
+(it should be above 99%). The CHH figure in Bismark's own report still includes the unconverted reads.

@@ -12,3 +12,4 @@ FastQC	all_sections	SRR6995996	/mmfs1/gscratch/scrubbed/sr320/github/project-gul
 FastQC	all_sections	SRR6995997	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/fastqc-raw/SRR6995997_fastqc.zip
 FastQC	all_sections	SRR6995998	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/fastqc-raw/SRR6995998_fastqc.zip
 Snippy	snippy	multiqc	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/multiqc/SRP139854-read-QC_multiqc_report_data/multiqc.log
+Snippy	snippy	multiqc_sources	/mmfs1/gscratch/scrubbed/sr320/github/project-gulf/output/02-qc-trim/multiqc/SRP139854-read-QC_multiqc_report_data/multiqc_sources.txt

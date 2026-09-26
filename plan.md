@@ -18,6 +18,12 @@ BioProject: PRJNA449904 · SRA: SRP139854
 - SRA has 6 runs (3 control, 3 oil). The local metadata has 13 rows with repeated samples; this still needs reconciling.
 - HB30 has about a third of the depth of the other samples.
 
+## Data quality findings (2026-09-25)
+- **Adapter dimers survived default trimming.** Trim Galore's auto-detected 13 bp adapter missed TruSeq dimers with errors in the first bases or the first 4 bases missing: 1.6–6.5% of trimmed reads, 22% in HB30. Fixed in `02` by passing the full 33 bp adapter plus a 4 bp-truncated version.
+- **Many reads are not bisulfite-converted.** Based on C/G content, about 17–31% of reads in five samples and about 63% in HB30 look unconverted. Before filtering, Bismark reported CHH methylation of 22–73% (should be <1%). `04` removes them with `filter_non_conversion` (≥3 methylated non-CpG calls).
+- **Library looks PBAT-style.** 81–96% of alignments are on the complementary strands (CTOT/CTOB), not ~50%. Aligning with `--non_directional`.
+- **Mapping is low.** 22–32% on 500k-read tests with the default `score_min`. `04` compares `L,0,-0.6`.
+
 ## Steps
 
 ### 1. Get the data
@@ -59,6 +65,6 @@ BioProject: PRJNA449904 · SRA: SRP139854
 - Run Bismark on HPC. Total input is about 15 Gb, so allow a few CPU-hours per sample.
 
 ## Open questions
-1. Which library kit was used (directional or not)?
+1. Which library kit was used? The strand pattern suggests PBAT-style. Why were so many reads (most of HB30) not bisulfite-converted: incomplete conversion, or unconverted DNA carried through MBD enrichment?
 2. What are the extra rows in the local metadata: lanes, re-sequencing, or duplicates? Is there data not deposited in SRA, especially for HB30?
 3. Is there a linked publication or prior analysis to reproduce or extend?

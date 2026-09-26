@@ -1,0 +1,332 @@
+---
+title: "05 - Methylation calling"
+output: html_document
+---
+
+Extract CpG methylation calls from the Bismark alignments, merge the two strands of each CpG,
+and summarize conversion, M-bias and coverage for each sample.
+
+Everything runs twice, on the filtered BAMs with and without deduplication, so the two can be compared.
+MBD enrichment plus single-end reads means some "duplicates" may be real independent fragments.
+
+- Input: `data/bismark/SRR*.nonCG_filtered.bam` and `SRR*.nonCG_filtered.deduplicated.bam` (from `04-bismark-align`)
+- Output methylation calls: `data/methylation/{nodedup,dedup}/` (gitignored)
+- Output reports and summaries: `output/05-methylation-calling/`
+
+Uses Bismark from the existing `myflow` env and data.table/ggplot2 from the lab R container.
+
+```{r setup, include=FALSE}
+# Paths are relative to code/, so chunks work the same run one at a time or knitted
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE)
+library(data.table)
+library(ggplot2)
+```
+
+# Link the BAMs
+
+The extractor names its outputs after the input file, so link each BAM under a plain `SRR*.bam` name:
+`data/methylation/nodedup/SRR*.bam` and `data/methylation/dedup/SRR*.bam`.
+
+```{bash link}
+set -euo pipefail
+
+for version in nodedup dedup; do
+  dir=../data/methylation/${version}
+  mkdir -p "${dir}"
+  for bam in ../data/bismark/SRR*.nonCG_filtered.bam; do
+    run=$(basename "${bam}" .nonCG_filtered.bam)
+    if [[ "${version}" == "dedup" ]]; then src=${run}.nonCG_filtered.deduplicated.bam; else src=${run}.nonCG_filtered.bam; fi
+    [[ -s "../data/bismark/${src}" ]] || { echo "Missing ../data/bismark/${src}"; exit 1; }
+    ln -sfn "../../bismark/${src}" "${dir}/${run}.bam"
+  done
+done
+ls -l ../data/methylation/*/
+```
+
+# Extract methylation calls
+
+Runs `bismark_methylation_extractor` on each BAM, one at a time.
+`--parallel 8` uses about 24 cores (the extractor uses roughly 3 per `--parallel` step).
+
+- `--comprehensive --merge_non_CpG`: one CpG and one non-CpG call file per sample instead of one per strand.
+- `--bedGraph`: writes the coverage file `SRR*.bismark.cov.gz` (chromosome, start, end, % methylated, count methylated, count unmethylated).
+- `ignore_5` / `ignore_3`: skip this many bases at the 5' and 3' end of every read when calling methylation.
+  Set from the M-bias plots below (10 and 2: artifacts over the first 6–8 bases and the last 1–2).
+  Changing them re-extracts every sample; each records its settings in `SRR*.extract-settings.txt`.
+  This is quicker than clipping in `02-qc-trim`, which would mean re-aligning.
+
+The per-read call files (`CpG_context_*`, `Non_CpG_context_*`) are tens of GB and nothing downstream uses them,
+so they are deleted unless `keep_context=true`. They can be regenerated from the BAMs.
+
+```{bash extract}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/myflow/bin:$PATH
+
+ignore_5=10
+ignore_3=2
+keep_context=false
+
+ignore_args=()
+if (( ignore_5 > 0 )); then ignore_args+=(--ignore "${ignore_5}"); fi
+if (( ignore_3 > 0 )); then ignore_args+=(--ignore_3prime "${ignore_3}"); fi
+
+# Each sample records the settings it was extracted with; changing them forces a re-run
+settings="ignore_5=${ignore_5} ignore_3=${ignore_3}"
+
+for version in nodedup dedup; do
+  dir=../data/methylation/${version}
+  report_dir=../output/05-methylation-calling/reports/${version}
+  mkdir -p "${report_dir}"
+
+  for bam in "${dir}"/SRR*.bam; do
+    run=$(basename "${bam}" .bam)
+    stamp=${dir}/${run}.extract-settings.txt
+    # -nt follows the symlink, so this compares against the real BAM
+    if [[ -s "${dir}/${run}.bismark.cov.gz" && "${dir}/${run}.bismark.cov.gz" -nt "${bam}" \
+          && -s "${stamp}" && "$(cat "${stamp}")" == "${settings}" ]]; then
+      echo "${version} ${run}: already extracted with ${settings}, skipping"
+      continue
+    fi
+    echo "${version} ${run}: extracting with ${settings}"
+    rm -f "${stamp}"
+
+    bismark_methylation_extractor \
+      --single-end \
+      --gzip \
+      --comprehensive \
+      --merge_non_CpG \
+      --bedGraph \
+      --buffer_size 20G \
+      --parallel 8 \
+      "${ignore_args[@]}" \
+      --output_dir "${dir}" \
+      "${bam}" \
+      > "${report_dir}/${run}.extractor.log" 2>&1
+
+    mv "${dir}/${run}_splitting_report.txt" "${dir}/${run}.M-bias.txt" "${report_dir}/"
+    mv "${dir}/${run}".M-bias_R1.png "${report_dir}/" 2>/dev/null || true
+    if [[ "${keep_context}" != "true" ]]; then
+      rm -f "${dir}/CpG_context_${run}.txt.gz" "${dir}/Non_CpG_context_${run}.txt.gz"
+    fi
+    # Written last, so an interrupted run is redone next time
+    echo "${settings}" > "${stamp}"
+  done
+done
+
+ls -lh ../data/methylation/*/
+```
+
+# Merge strands
+
+Each CpG is on both strands, and the extractor reports the two cytosines separately.
+`coverage2cytosine --merge_CpG` adds their counts together, giving one row per CpG in `SRR*.CpG_report.merged_CpG_evidence.cov.gz`.
+This is the file steps 6 and 7 use. It also writes a genome-wide `SRR*.CpG_report.txt.gz` with every CpG, covered or not.
+
+`coverage2cytosine` is single-threaded, so all 12 (6 samples × 2 versions) run at once.
+Each loads the genome (about 1 GB of memory).
+
+```{bash merge-cpg}
+set -euo pipefail
+export PATH=/mmfs1/gscratch/srlab/sr320/miniforge3/envs/myflow/bin:$PATH
+
+genome=$(realpath ../data/genome/bismark)
+
+merge_one() {
+  local dir=$1 run=$2 log=$3
+  coverage2cytosine \
+    --merge_CpG \
+    --gzip \
+    --genome_folder "${genome}" \
+    --dir "${dir}" \
+    -o "${run}" \
+    "${dir}/${run}.bismark.cov.gz" \
+    > "${log}" 2>&1
+}
+
+pids=(); jobs_desc=()
+for version in nodedup dedup; do
+  dir=../data/methylation/${version}
+  report_dir=../output/05-methylation-calling/reports/${version}
+  for cov in "${dir}"/SRR*.bismark.cov.gz; do
+    run=$(basename "${cov}" .bismark.cov.gz)
+    out=${dir}/${run}.CpG_report.merged_CpG_evidence.cov.gz
+    if [[ -s "${out}" && "${out}" -nt "${cov}" ]]; then
+      echo "${version} ${run}: already merged, skipping"
+      continue
+    fi
+    echo "${version} ${run}: merging"
+    merge_one "${dir}" "${run}" "${report_dir}/${run}.coverage2cytosine.log" &
+    pids+=($!); jobs_desc+=("${version} ${run}")
+  done
+done
+
+failed=0
+for i in "${!pids[@]}"; do
+  if wait "${pids[$i]}"; then
+    echo "${jobs_desc[$i]}: done"
+  else
+    echo "${jobs_desc[$i]}: FAILED, see its coverage2cytosine.log"
+    failed=1
+  fi
+done
+exit "${failed}"
+```
+
+# Conversion check
+
+With unconverted reads removed in step 4, methylation outside CpG context should now be close to zero.
+`--merge_non_CpG` pools CHG and CHH into one non-CpG figure in the splitting report, so
+conversion efficiency ≈ 100 − non-CpG%. It should be above 99%. The M-bias table below still has CHG and CHH separately.
+
+```{r conversion}
+sample_sheet <- fread("../data/sample_sheet.csv")
+report_root <- "../output/05-methylation-calling/reports"
+
+read_field <- function(lines, pattern) {
+  hit <- grep(pattern, lines, value = TRUE)
+  if (length(hit) == 0) return(NA_real_)
+  as.numeric(sub("^[^\t]*\t\\s*([0-9.]+).*", "\\1", hit[1]))
+}
+
+conversion <- rbindlist(lapply(c("nodedup", "dedup"), function(version) {
+  files <- list.files(file.path(report_root, version), "_splitting_report\\.txt$", full.names = TRUE)
+  rbindlist(lapply(files, function(f) {
+    lines <- readLines(f)
+    data.table(
+      run          = sub("_splitting_report\\.txt$", "", basename(f)),
+      version      = version,
+      CpG_meth_pct    = read_field(lines, "^C methylated in CpG context:"),
+      nonCpG_meth_pct = read_field(lines, "^C methylated in non-CpG context:")
+    )
+  }))
+}))
+conversion[, conversion_pct := 100 - nonCpG_meth_pct]
+conversion <- merge(sample_sheet[, .(run, sample, treatment)], conversion, by = "run")
+setorder(conversion, version, treatment, sample)
+
+dir.create("../output/05-methylation-calling", showWarnings = FALSE)
+fwrite(conversion, "../output/05-methylation-calling/conversion.csv")
+conversion
+```
+
+# M-bias
+
+Methylation by position in the read. It should be flat. A rise or dip over the first or last few bases
+is a library-prep artifact (common in PBAT-style and random-primed libraries); set `ignore_5` / `ignore_3`
+in the extract chunk to skip those bases, then re-run from there.
+Shown for the deduplicated BAMs; the non-deduplicated ones should look the same.
+
+```{r mbias, fig.width = 10, fig.height = 6}
+read_mbias <- function(file) {
+  lines <- readLines(file)
+  # Single-end headings are "CpG context", "CHG context", "CHH context" (paired-end adds " (R1)")
+  starts <- grep("^(CpG|CHG|CHH) context", lines)
+  rbindlist(lapply(starts, function(s) {
+    context <- sub(" context.*", "", lines[s])
+    body <- lines[(s + 3):length(lines)]
+    end <- which(body == "")[1]
+    if (!is.na(end)) body <- body[seq_len(end - 1)]
+    tbl <- fread(text = paste(body, collapse = "\n"), header = FALSE,
+                 col.names = c("position", "methylated", "unmethylated", "pct_meth", "coverage"))
+    tbl[, context := context]
+  }))
+}
+
+mbias_files <- list.files(file.path(report_root, "dedup"), "\\.M-bias\\.txt$", full.names = TRUE)
+mbias <- rbindlist(lapply(mbias_files, function(f) read_mbias(f)[, run := sub("\\.M-bias\\.txt$", "", basename(f))]))
+mbias <- merge(mbias, sample_sheet[, .(run, sample, treatment)], by = "run")
+fwrite(mbias, "../output/05-methylation-calling/m-bias.csv")
+
+p <- ggplot(mbias[coverage >= 1000], aes(position, pct_meth, colour = sample)) +
+  geom_line() +
+  facet_wrap(~ context, scales = "free_y") +
+  labs(x = "Position in read (bp)", y = "% methylated", colour = "Sample",
+       title = "M-bias, deduplicated reads (positions with at least 1,000 calls)") +
+  theme_bw()
+ggsave("../output/05-methylation-calling/m-bias.png", p, width = 10, height = 6, dpi = 150)
+p
+```
+
+# CpG coverage
+
+Reads each sample's merged CpG file and counts CpGs at 1×, 5× and 10× coverage.
+The plan's differential methylation (step 6) needs a CpG covered in *every* sample,
+so the key numbers are how many CpGs are shared across samples, with and without HB30.
+
+```{r coverage}
+read_merged <- function(version, run) {
+  f <- file.path("../data/methylation", version, paste0(run, ".CpG_report.merged_CpG_evidence.cov.gz"))
+  cov <- fread(f, header = FALSE, select = c(1, 2, 5, 6),
+               col.names = c("chr", "pos", "methylated", "unmethylated"))
+  cov[, coverage := methylated + unmethylated]
+  cov[coverage > 0]
+}
+
+merged <- lapply(setNames(nm = c("nodedup", "dedup")), function(version) {
+  lapply(setNames(nm = sample_sheet$run), function(run) read_merged(version, run))
+})
+
+coverage_summary <- rbindlist(lapply(names(merged), function(version) {
+  rbindlist(lapply(names(merged[[version]]), function(run) {
+    cov <- merged[[version]][[run]]
+    data.table(
+      run           = run,
+      version       = version,
+      CpGs_1x       = nrow(cov),
+      CpGs_5x       = cov[coverage >= 5, .N],
+      CpGs_10x      = cov[coverage >= 10, .N],
+      median_cov    = as.numeric(median(cov$coverage)),
+      mean_meth_5x  = round(cov[coverage >= 5, 100 * mean(methylated / coverage)], 1)
+    )
+  }))
+}))
+coverage_summary <- merge(sample_sheet[, .(run, sample, treatment)], coverage_summary, by = "run")
+setorder(coverage_summary, version, treatment, sample)
+fwrite(coverage_summary, "../output/05-methylation-calling/coverage-summary.csv")
+coverage_summary
+```
+
+```{r shared-cpgs}
+shared_count <- function(version, runs, min_cov) {
+  keys <- lapply(runs, function(r) merged[[version]][[r]][coverage >= min_cov, paste(chr, pos)])
+  length(Reduce(intersect, keys))
+}
+
+hb30 <- sample_sheet[sample == "HB30", run]
+shared <- CJ(version = c("nodedup", "dedup"), min_cov = c(5, 10))
+shared[, all_6 := mapply(shared_count, version, MoreArgs = list(runs = sample_sheet$run), min_cov = min_cov)]
+shared[, without_HB30 := mapply(shared_count, version, MoreArgs = list(runs = setdiff(sample_sheet$run, hb30)), min_cov = min_cov)]
+shared[, fold_gain_dropping_HB30 := round(without_HB30 / all_6, 1)]
+
+fwrite(shared, "../output/05-methylation-calling/shared-cpgs.csv")
+shared
+```
+
+**Deciding on HB30.** Keeping it means every tested CpG must reach the coverage cutoff in HB30 too.
+If `fold_gain_dropping_HB30` is large, HB30 is throwing away most of the testable CpGs and step 6 should
+run as 3 control vs. 2 oil. Its conversion rate and M-bias above should also look like the other samples'.
+
+# Deduplicated vs. not
+
+For CpGs at 10× or more in both versions, how similar are the per-CpG methylation levels?
+If they agree closely, deduplication mainly costs coverage; if they differ, duplicates are skewing calls.
+
+```{r dedup-compare}
+dedup_compare <- rbindlist(lapply(sample_sheet$run, function(run) {
+  a <- merged$nodedup[[run]][coverage >= 10, .(chr, pos, meth_nodedup = methylated / coverage)]
+  b <- merged$dedup[[run]][coverage >= 10, .(chr, pos, meth_dedup = methylated / coverage)]
+  both <- merge(a, b, by = c("chr", "pos"))
+  data.table(
+    run                = run,
+    CpGs_10x_nodedup   = nrow(a),
+    CpGs_10x_dedup     = nrow(b),
+    CpGs_10x_both      = nrow(both),
+    correlation        = round(cor(both$meth_nodedup, both$meth_dedup), 3),
+    mean_abs_diff_pct  = round(100 * mean(abs(both$meth_nodedup - both$meth_dedup)), 2)
+  )
+}))
+dedup_compare <- merge(sample_sheet[, .(run, sample, treatment)], dedup_compare, by = "run")
+setorder(dedup_compare, treatment, sample)
+fwrite(dedup_compare, "../output/05-methylation-calling/dedup-compare.csv")
+dedup_compare
+```

@@ -1,0 +1,4 @@
+Analysed sequences (single-end) in file >> ../output/04-bismark-align/tests/L_0_-0.6/SRR6995997.bam << in total:	241847
+Sequences removed because of apparent non-bisulfite conversion (at least 3 non-CG calls per read):	79356 (32.8%)
+
+filter_non_conversion completed in 0d 0h 0m 4s

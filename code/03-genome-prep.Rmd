@@ -90,7 +90,7 @@ head(sizes[order(-sizes$length), ], 12)
 # Build the Bismark index
 
 Builds the C->T and G->A converted genomes and indexes each with Bowtie2.
-`--parallel 4` runs 4 threads for each of the two indexes (8 cores total).
+`--parallel 4` runs 12 threads for each of the two indexes (24 cores total).
 This takes about an hour, so run it on a compute node.
 
 ```{bash bismark-index}
@@ -104,7 +104,7 @@ if [[ -d "${genome_dir}/Bisulfite_Genome" ]]; then
 else
   bismark_genome_preparation \
     --bowtie2 \
-    --parallel 4 \
+    --parallel 12 \
     --verbose \
     "${genome_dir}" \
     2>&1 | tee ../output/03-genome-prep/bismark_genome_preparation.log

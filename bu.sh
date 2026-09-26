@@ -4,5 +4,6 @@ rsync -av ../project-gulf \
 --exclude='*C_to_T.fastq' \
 --exclude='*G_to_A.fastq' \
 --exclude='Non_CpG_context*' \
+--exclude='*temp*' \
 --exclude='.*' --exclude='*/.*' \
 sr320@gannet.fish.washington.edu:/volume1/v1_web/owlshell/bu-github/
